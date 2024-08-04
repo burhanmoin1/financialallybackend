@@ -1,1 +1,1 @@
-This is the repository for the backend of the financial ally web app. It is created using django, and is using technologies like rest-framework, mongoengine, rest-framework-mongoengine and much more.
+This is the repository for the backend of the financial ally web app. It is created using django, and is using technologies like rest-framework, mongoengine, rest-framework-mongoengine and more.

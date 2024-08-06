@@ -11,7 +11,7 @@ class MongoEngineUserBackend(BaseBackend):
             return None
 
         # Check if the user is active and if the password matches
-        if user and user.is_active and check_password(password, user.password):
+        if user and user.is_activated and check_password(password, user.password):
             return user  # Authentication successful
         return None  # Authentication failed
 

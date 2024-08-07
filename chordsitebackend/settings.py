@@ -6,7 +6,7 @@ SECRET_KEY = 'django-insecure-trqo849nebg5-%y@n^$%sva2!gs)m(e%bjdoa3j_z^(()90(r2
 
 DEBUG = True
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = ['http://chordsiteenv.eba-ijvmmpzy.us-west-2.elasticbeanstalk.com/']
 
 INSTALLED_APPS = [
     "django.contrib.admin",

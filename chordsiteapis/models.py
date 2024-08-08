@@ -11,7 +11,7 @@ class User(Document):
     activation_token_valid = fields.BooleanField(blank=True, default=True)
     password_reset_token = fields.StringField(blank=True)
     password_reset_token_valid = fields.BooleanField(blank=True, default=False)
-    session_tokens = fields.ListField(fields.StringField(), blank=True, default=list)  # Corrected order
+    session_tokens = fields.ListField(fields.StringField(), blank=True, default=list)
 
     def add_session_token(self, token):
         # Add a new session token if there are less than 4
@@ -32,3 +32,26 @@ class User(Document):
     def is_session_token_valid(self, token):
         # Check if a session token is valid
         return token in self.session_tokens
+
+
+class TextSummarizationHistory(Document):
+    user = fields.ReferenceField('User', blank=False)  # Reference to the User model
+    summary = fields.StringField(blank=False)  # The generated summary text
+    created_at = fields.DateTimeField(default=datetime.utcnow)  # Timestamp for the summary creation
+
+    meta = {
+        'indexes': [
+            {'fields': ['user']},  # Index for querying summaries by user
+        ]
+    }
+
+    def add_summary(self, user, summary):
+        # Create and save a new summary for a specific user
+        self.user = user
+        self.summary = summary
+        self.save()
+
+    @staticmethod
+    def get_summaries_by_user(user):
+        # Retrieve all summaries for a specific user
+        return TextSummarizationHistory.objects(user=user)

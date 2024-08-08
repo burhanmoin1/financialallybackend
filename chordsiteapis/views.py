@@ -2,7 +2,7 @@ from django.shortcuts import render
 from rest_framework import generics, status
 from rest_framework.response import Response
 from .models import User
-from .serializers import UserSerializer
+from .serializers import *
 import uuid
 from django.utils.crypto import get_random_string
 from django.views import View
@@ -11,6 +11,9 @@ from django.views.decorators.http import require_http_methods
 from rest_framework.decorators import api_view
 from django.contrib.auth.hashers import make_password
 from .mongobackend import MongoEngineUserBackend
+import boto3
+import json
+from .summaryserializers import *
 
 # signup API
 class UserCreateView(generics.CreateAPIView):
@@ -164,6 +167,7 @@ def login_user_api(request):
             'message': 'Login successful',
             'name': user.first_name,
             'user_email': user.email,
+            'user_id': str(user.pk),
             'session_token': session_token
         }, status=status.HTTP_200_OK)
     else:
@@ -193,3 +197,278 @@ def user_session_checker(request):
 
     except User.DoesNotExist:
         return Response({'error': 'User not found.'}, status=status.HTTP_400_BAD_REQUEST)
+
+
+
+bedrock = boto3.client(
+    service_name='bedrock-runtime',
+    region_name="us-west-2"
+)
+
+@api_view(['POST'])
+def cohere_command_text_summary(request):
+    """
+    Handles POST requests to generate text based on the provided prompt.
+    """
+    serializer = PromptSerializer(data=request.data)
+    if serializer.is_valid():
+        # Extract the prompt from the validated serializer
+        prompt = serializer.validated_data['prompt']
+        
+        # Use static values for other parameters
+        max_tokens = 1000
+        temperature = 0.75
+        p = 0.9
+        k = 0
+
+        # Construct the request body
+        body = json.dumps({
+            "prompt": prompt,
+            "max_tokens": max_tokens,
+            "temperature": temperature,
+            "p": p,
+            "k": k,
+        })
+
+        model_id = 'cohere.command-text-v14'
+        accept = 'application/json'
+        content_type = 'application/json'
+
+        try:
+            # Make the request to the model
+            response = bedrock.invoke_model(
+                body=body,
+                modelId=model_id,
+                accept=accept,
+                contentType=content_type
+            )
+
+            # Process the response
+            response_body = json.loads(response.get('body').read())
+            generated_text = response_body['generations'][0]['text']
+            
+            return Response({'generated_text': generated_text}, status=status.HTTP_200_OK)
+
+        except Exception as e:
+            return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+
+@api_view(['POST'])
+def jurassic_ultra_text_summary(request):
+    """
+    Handles POST requests to generate text based on the provided prompt.
+    """
+    serializer = PromptSerializer(data=request.data)
+    if serializer.is_valid():
+        # Extract the prompt from the validated serializer
+        prompt = serializer.validated_data['prompt']
+        
+        # Use static values for other parameters
+        max_tokens = 200
+        temperature = 0.5
+        top_p = 0.5
+
+        # Construct the request body
+        body = json.dumps({
+            "prompt": prompt,
+            "maxTokens": max_tokens,
+            "temperature": temperature,
+            "topP": top_p
+        })
+
+        model_id = 'ai21.j2-mid-v1'
+        accept = 'application/json'
+        content_type = 'application/json'
+
+        try:
+            # Make the request to the model
+            response = bedrock.invoke_model(
+                body=body,
+                modelId=model_id,
+                accept=accept,
+                contentType=content_type
+            )
+
+            # Process the response
+            response_body = json.loads(response.get('body').read())
+            generated_text = response_body.get('completions', [{}])[0].get('data', {}).get('text', '')
+            
+            return Response({'generated_text': generated_text}, status=status.HTTP_200_OK)
+
+        except Exception as e:
+            return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+@api_view(['POST'])
+def titan_express_text_summary(request):
+    """
+    Handles POST requests to generate text using the Titan Express model.
+    """
+    serializer = PromptSerializer(data=request.data)
+    if serializer.is_valid():
+        # Extract the prompt from the validated serializer
+        prompt = serializer.validated_data['prompt']
+
+        # Use adjusted values for better summarization
+        body = json.dumps({
+            "inputText": prompt,
+            "textGenerationConfig": {
+                "maxTokenCount": 100,  # Limit the length of the summary
+                "stopSequences": [],  # No stop sequences
+                "temperature": 0.5,   # Lower temperature for more focused output
+                "topP": 0.9           # Adjust top-p for more controlled sampling
+            }
+        })
+
+        model_id = 'amazon.titan-text-express-v1'
+
+        try:
+            response = bedrock.invoke_model(
+                body=body,
+                modelId=model_id,
+                accept="application/json",
+                contentType="application/json"
+            )
+            response_body = json.loads(response.get("body").read())
+            generated_text = response_body['results'][0]['outputText']
+
+            # Remove the "Summary: " prefix and any newline characters before it
+            if generated_text.startswith('\nSummary:'):
+                generated_text = generated_text[len('\nSummary:'):].strip()
+
+            return Response({'generated_text': generated_text}, status=status.HTTP_200_OK)
+
+        except Exception as e:
+            return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+@api_view(['POST'])
+def titan_lite_text_summary(request):
+    """
+    Handles POST requests to generate a more concise and precise summary using the Titan Lite model.
+    """
+    serializer = PromptSerializer(data=request.data)
+    if serializer.is_valid():
+        # Extract the prompt from the validated serializer
+        prompt = serializer.validated_data['prompt']
+
+        # Use adjusted values for better summarization
+        body = json.dumps({
+            "inputText": prompt,
+            "textGenerationConfig": {
+                "maxTokenCount": 4096,
+                "stopSequences": [],
+                "temperature": 0,
+                "topP": 1,
+            }
+        })
+
+        model_id = 'amazon.titan-text-lite-v1'
+
+        try:
+            response = bedrock.invoke_model(
+                body=body,
+                modelId=model_id,
+                accept="application/json",
+                contentType="application/json"
+            )
+            response_body = json.loads(response.get("body").read())
+            generated_text = response_body['results'][0]['outputText']
+            
+            # Remove "Summary: " prefix if it exists
+            if generated_text.startswith("Summary: "):
+                generated_text = generated_text[len("Summary: "):]
+            
+            return Response({'generated_text': generated_text}, status=status.HTTP_200_OK)
+
+        except Exception as e:
+            return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+@api_view(['POST'])
+def command_r_text_summary(request):
+    """
+    Handles POST requests to generate text summary using the Cohere Command R model.
+    """
+    serializer = PromptSerializer(data=request.data)
+    if serializer.is_valid():
+        # Extract the prompt from the validated serializer
+        prompt = serializer.validated_data['prompt']
+
+        # Configure the request body
+        body = json.dumps({
+            "message": prompt,
+            "max_tokens": 512,
+            "temperature": 0.5,
+            "p": 0.01,
+            "k": 0
+        })
+
+        model_id = 'cohere.command-r-plus-v1:0'
+
+        try:
+            response = bedrock.invoke_model(
+                body=body,
+                modelId=model_id,
+                accept="application/json",
+                contentType="application/json"
+            )
+            
+            response_body = json.loads(response.get("body").read())
+            generated_text = response_body.get('text', 'No text returned')
+
+            return Response({'generated_text': generated_text}, status=status.HTTP_200_OK)
+
+        except Exception as e:
+            return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+from rest_framework.views import APIView
+class TextSummarizationHistoryView(APIView):
+    """
+    Handles POST requests to save a summary and GET requests to retrieve summaries based on user_id.
+    """
+    def post(self, request):
+        serializer = TextSummarizationHistorySerializer(data=request.data)
+        if serializer.is_valid():
+            user_id = request.data.get('user_id')
+            summary = serializer.validated_data['summary']
+            
+            try:
+                # Find the user by user_id
+                user = User.objects.get(pk=user_id)
+                
+                # Create and save the summary
+                summary_history = TextSummarizationHistory(user=user, summary=summary)
+                summary_history.save()
+                
+                return Response({'message': 'Summary saved successfully.'}, status=status.HTTP_201_CREATED)
+            
+            except User.DoesNotExist:
+                return Response({'error': 'User not found.'}, status=status.HTTP_404_NOT_FOUND)
+        
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    def get(self, request):
+        user_id = request.query_params.get('user_id')
+        
+        if not user_id:
+            return Response({'error': 'User ID is required.'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        try:
+            user = User.objects.get(pk=user_id)
+            summaries = TextSummarizationHistory.objects.filter(user=user)
+            
+            serializer = RetrieveTextSummarizationHistorySerializer(summaries, many=True)
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        
+        except User.DoesNotExist:
+            return Response({'error': 'User not found.'}, status=status.HTTP_404_NOT_FOUND)

@@ -25,6 +25,10 @@ class UserCreateView(generics.CreateAPIView):
         if serializer.is_valid():
             try:
                 self.perform_create(serializer)
+                # Send activation email
+                user_email = serializer.validated_data['email']
+                activation_token = serializer.validated_data['activation_token']
+                self.send_activation_email(user_email, activation_token)
                 return Response(serializer.data, status=status.HTTP_201_CREATED)
             except Exception as e:
                 return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
@@ -34,6 +38,41 @@ class UserCreateView(generics.CreateAPIView):
     def perform_create(self, serializer):
         activation_token = str(uuid.uuid4().hex)
         serializer.save(activation_token=activation_token)
+
+    def send_activation_email(self, email, activation_token):
+        client = boto3.client(
+            'ses',
+            region_name=settings.AWS_SES_REGION_NAME,
+            aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
+            aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY
+        )
+        
+        activation_url = f"https://thenexusplatform.com/verify/{activation_token}"
+        subject = "Activate Your Account"
+        body_text = f"Please visit this URL to activate your account: {activation_url}"
+        body_html = f"<html><body><p>Please visit this URL to activate your account: <a href='{activation_url}'>Activate Now</a></p></body></html>"
+
+        response = client.send_email(
+            Source=settings.DEFAULT_FROM_EMAIL,  # Set this to the email address you verified with SES
+            Destination={
+                'ToAddresses': [email],
+            },
+            Message={
+                'Subject': {
+                    'Data': subject,
+                },
+                'Body': {
+                    'Text': {
+                        'Data': body_text,
+                    },
+                    'Html': {
+                        'Data': body_html,
+                    },
+                },
+            },
+        )
+
+        return response
 
 @api_view(['GET'])
 def check_activation_token_validity(request, activation_token):
@@ -105,7 +144,6 @@ def generate_password_reset_token(request):
         return JsonResponse({'error': 'User with this email does not exist'}, status=404)
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
-
 
 class ValidateTokenView(View):
     def get(self, request, reset_token):
@@ -197,8 +235,6 @@ def user_session_checker(request):
 
     except User.DoesNotExist:
         return Response({'error': 'User not found.'}, status=status.HTTP_400_BAD_REQUEST)
-
-
 
 bedrock = boto3.client(
     service_name='bedrock-runtime',

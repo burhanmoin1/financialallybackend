@@ -24,6 +24,7 @@ INSTALLED_APPS = [
 
 
 CORS_ALLOWED_ORIGINS = [
+    "http://localhost:3000",
     'https://thenexusplatform.com',
     'https://www.thenexusplatform.com',
 ]

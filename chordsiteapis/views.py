@@ -14,8 +14,9 @@ from .mongobackend import MongoEngineUserBackend
 import boto3
 import json
 from .summaryserializers import *
+from django.core.mail import send_mail
+from django.conf import settings
 
-# signup API
 class UserCreateView(generics.CreateAPIView):
     queryset = User.objects.all()
     serializer_class = UserSerializer
@@ -24,58 +25,38 @@ class UserCreateView(generics.CreateAPIView):
         serializer = self.get_serializer(data=request.data)
         if serializer.is_valid():
             try:
-                self.perform_create(serializer)
-                # Send activation email
+                # Generate the activation token
+                activation_token = str(uuid.uuid4().hex)
+                
+                # Prepare the email content
                 user_email = serializer.validated_data['email']
-                activation_token = serializer.validated_data['activation_token']
-                self.send_activation_email(user_email, activation_token)
+                activation_url = f"https://thenexusplatform.com/signup/verify/{activation_token}"
+                subject = "Activate Your Account"
+                message = f"Please visit this URL to activate your account: {activation_url}"
+                html_message = f"<html><body><p>Please visit this URL to activate your account: <a href='{activation_url}'>Activate Now</a></p></body></html>"
+                
+                # Send the email
+                send_mail(
+                    subject,
+                    message,
+                    settings.DEFAULT_FROM_EMAIL,
+                    [user_email],
+                    fail_silently=False,
+                    html_message=html_message,
+                )
+                
+                # Save the user to the database only if the email was successfully sent
+                serializer.save(activation_token=activation_token)
+                
                 return Response(serializer.data, status=status.HTTP_201_CREATED)
             except Exception as e:
                 return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
         else:
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-    def perform_create(self, serializer):
-        activation_token = str(uuid.uuid4().hex)
-        serializer.save(activation_token=activation_token)
-
-    def send_activation_email(self, email, activation_token):
-        client = boto3.client(
-            'ses',
-            region_name=settings.AWS_SES_REGION_NAME,
-            aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
-            aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY
-        )
-        
-        activation_url = f"https://thenexusplatform.com/verify/{activation_token}"
-        subject = "Activate Your Account"
-        body_text = f"Please visit this URL to activate your account: {activation_url}"
-        body_html = f"<html><body><p>Please visit this URL to activate your account: <a href='{activation_url}'>Activate Now</a></p></body></html>"
-
-        response = client.send_email(
-            Source=settings.DEFAULT_FROM_EMAIL,  # Set this to the email address you verified with SES
-            Destination={
-                'ToAddresses': [email],
-            },
-            Message={
-                'Subject': {
-                    'Data': subject,
-                },
-                'Body': {
-                    'Text': {
-                        'Data': body_text,
-                    },
-                    'Html': {
-                        'Data': body_html,
-                    },
-                },
-            },
-        )
-
-        return response
-
 @api_view(['GET'])
 def check_activation_token_validity(request, activation_token):
+    print(f"Received token: {activation_token}")
     try:
         # Find the user with the given activation token
         user = User.objects.get(activation_token=activation_token)
@@ -303,9 +284,9 @@ def jurassic_ultra_text_summary(request):
         prompt = serializer.validated_data['prompt']
         
         # Use static values for other parameters
-        max_tokens = 200
+        max_tokens = 1000
         temperature = 0.5
-        top_p = 0.5
+        top_p = 0.9
 
         # Construct the request body
         body = json.dumps({
@@ -354,10 +335,9 @@ def titan_express_text_summary(request):
         body = json.dumps({
             "inputText": prompt,
             "textGenerationConfig": {
-                "maxTokenCount": 100,  # Limit the length of the summary
-                "stopSequences": [],  # No stop sequences
-                "temperature": 0.5,   # Lower temperature for more focused output
-                "topP": 0.9           # Adjust top-p for more controlled sampling
+                "maxTokenCount": 2090,
+                "temperature": 0,   # Lower temperature for more focused output
+                "topP": 0.2           # Adjust top-p for more controlled sampling
             }
         })
 
@@ -372,10 +352,6 @@ def titan_express_text_summary(request):
             )
             response_body = json.loads(response.get("body").read())
             generated_text = response_body['results'][0]['outputText']
-
-            # Remove the "Summary: " prefix and any newline characters before it
-            if generated_text.startswith('\nSummary:'):
-                generated_text = generated_text[len('\nSummary:'):].strip()
 
             return Response({'generated_text': generated_text}, status=status.HTTP_200_OK)
 
@@ -441,9 +417,9 @@ def command_r_text_summary(request):
         # Configure the request body
         body = json.dumps({
             "message": prompt,
-            "max_tokens": 512,
-            "temperature": 0.5,
-            "p": 0.01,
+            "max_tokens": 2000,
+            "temperature": 0.75,
+            "p": 0.9,
             "k": 0
         })
 

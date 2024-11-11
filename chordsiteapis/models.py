@@ -1,10 +1,11 @@
 from django_mongoengine import Document, fields
 from datetime import datetime
+import pytz
 
 class User(Document):
     email = fields.EmailField(blank=False, unique=True)
-    first_name = fields.StringField(blank=False)
-    last_name = fields.StringField(blank=False)
+    first_name = fields.StringField(blank=False, unique=False)
+    last_name = fields.StringField(blank=False, unique=False)
     password = fields.StringField(blank=False)
     is_activated = fields.BooleanField(default=False)
     activation_token = fields.StringField(blank=True)
@@ -35,9 +36,10 @@ class User(Document):
 
 
 class TextSummarizationHistory(Document):
-    user = fields.ReferenceField('User', blank=False)  # Reference to the User model
-    summary = fields.StringField(blank=False)  # The generated summary text
-    created_at = fields.DateTimeField(default=datetime.utcnow)  # Timestamp for the summary creation
+    user = fields.ReferenceField('User', blank=False)
+    summary = fields.StringField(blank=False) 
+    model_id = fields.StringField(blank=True)
+    created_at = fields.DateTimeField(default=lambda: datetime.now(pytz.utc))
 
     meta = {
         'indexes': [
